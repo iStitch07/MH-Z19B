@@ -5,10 +5,11 @@
 #include <arduino_secrets.h>
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
+#include <MHZ19.h>
 
-#define MH_Z19_RX D4  // D7
-#define MH_Z19_TX D3// D6
-#define CO2_INTERVAL 15000
+#define RX_PIN D4  // D7
+#define TX_PIN D3// D6
+#define CO2_INTERVAL 10000
 
 const char* ssid          = SECRET_GENERAL_WIFI_SSID;
 const char* password      = SECRET_GENERAL_WIFI_PASSWORD;
@@ -22,30 +23,24 @@ long lastCo2Measured = 0;
 
 float smoothing_factor = 0.5;
 float smoothing_factor2 = 0.15;
+int8_t flag = 0;
 
-const char* hostname = "mhz-19b";
+const char* hostname = "mh-z19b";
 
-char mqtt_topic_status_base[] = "esp/status/";
-char mqtt_topic_data_base[] = "esp/sensors/co2/";
-
-char mqtt_topic_status[sizeof(mqtt_topic_status_base) + sizeof(hostname) + 5];
-char mqtt_topic_data[sizeof(mqtt_topic_data_base) + sizeof(hostname) + 5];
+char mqtt_topic_status[]  = "esp/status/mh-z19b";
+char mqtt_topic_data[]    = "esp/sensors/co2/mh-z19b";
+char mqtt_topic_set[]     = "esp/set/mh-z19b";
 
 StaticJsonDocument<200> dataDoc;
 
-byte cmd_z19[]    = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
-byte abc_z19[]    = {0xFF, 0x01, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x86};
-byte rpl_z19[]    = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-#define CO2_HBYTE 2
-#define CO2_LBYTE 3
-
-int z19_co2;
-int z19_co2_mean;
-int z19_co2_mean2;
+int co2;
+int co2_mean;
+int co2_mean2;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+SoftwareSerial mySerial(RX_PIN, TX_PIN);
+MHZ19 myMHZ19;
 
 boolean mqtt_reconnect() {
   if(client.connect(hostname, mqttUser, mqttPassword, mqtt_topic_status, 2, true, "offline")) {
@@ -94,75 +89,21 @@ boolean wifi_reconnect() {
   return true;
 }
 
-unsigned long mTXRXData(byte cmd[], int tx_len, int rx_len, int hi_byte, int lo_byte) {
-  SoftwareSerial z19Serial(MH_Z19_RX, MH_Z19_TX);
-  z19Serial.begin(9600);
-  while(!z19Serial.available()) {
-    z19Serial.write(cmd, tx_len); 
-    delay(50); 
-  }
-  int timeout=0;
-  while(z19Serial.available() < rx_len ) {
-    timeout++; 
-    if(timeout > 10) {
-      while(z19Serial.available()) {
-        z19Serial.read();
-        break;
-      }
-    } 
-    delay(50); 
-  } 
-  for (int i=0; i < rx_len; i++) { 
-    rpl_z19[i] = z19Serial.read(); 
-  }  
-  z19Serial.end();
-
-  int high = rpl_z19[hi_byte];
-  int low = rpl_z19[lo_byte];
-  unsigned long val = high*256 + low;
-
-  return val;
-}  
-
-void co2_measure() {
-  z19_co2 = mTXRXData(cmd_z19, sizeof(cmd_z19)/sizeof((cmd_z19)[0]), sizeof(rpl_z19)/sizeof((rpl_z19)[0]), CO2_HBYTE, CO2_LBYTE);
-  
-  if (!z19_co2_mean) z19_co2_mean = z19_co2;
-  z19_co2_mean = z19_co2_mean - smoothing_factor*(z19_co2_mean - z19_co2);
-  
-  if (!z19_co2_mean2) z19_co2_mean2 = z19_co2;
-  z19_co2_mean2 = z19_co2_mean2 - smoothing_factor2*(z19_co2_mean2 - z19_co2);
-
-  dataDoc["current"]  = z19_co2;
-  dataDoc["mean"]     = z19_co2_mean;
-  dataDoc["mean2"]    = z19_co2_mean2;
-  return;
-}
-
-void zero_calibration() {
-  int z19_zero = mTXRXData(abc_z19, sizeof(abc_z19)/sizeof((abc_z19)[0]), sizeof(abc_z19)/sizeof((abc_z19)[0]), CO2_HBYTE, CO2_LBYTE);
-  dataDoc["abc"] = z19_zero;
-  return;
-}
-
 void setup() {
   Serial.begin(115200);
   delay(10);
-  
-  strcpy(mqtt_topic_status, mqtt_topic_status_base);
-  strcat(mqtt_topic_status, hostname);
-
-  strcpy(mqtt_topic_data, mqtt_topic_data_base);
-  strcat(mqtt_topic_data, hostname);
 
   if(WiFi.status() != WL_CONNECTED) {
     wifi_reconnect();
   }
 
   client.setServer(mqttServer, mqttPort);
-
   mqtt_reconnect();
-  zero_calibration();
+
+  mySerial.begin(9600);
+  myMHZ19.begin(mySerial);
+
+  myMHZ19.autoCalibration(false);
 }
 
 void loop() {
@@ -185,7 +126,29 @@ void loop() {
   
   long co2_time = millis();
   if(co2_time - lastCo2Measured > CO2_INTERVAL) {
-    co2_measure();
+    if(flag == 0) {
+      co2 = myMHZ19.getCO2();
+      dataDoc["current"]  = co2;
+
+      if (!co2_mean) co2_mean = co2;
+        co2_mean = co2_mean - smoothing_factor*(co2_mean - co2);
+  
+      if (!co2_mean2) co2_mean2 = co2;
+        co2_mean2 = co2_mean2 - smoothing_factor2*(co2_mean2 - co2);
+      flag = 1;
+    } else {
+      co2 = myMHZ19.getCO2(false);
+      dataDoc["limited"] = co2;
+      flag = 0;
+    }
+
+    dataDoc["mean"]     = co2_mean;
+    dataDoc["mean2"]    = co2_mean2;
+    dataDoc["IP"]       = WiFi.localIP().toString();
+    dataDoc["Temp"]     = myMHZ19.getTemperature();
+    dataDoc["Range"]    = myMHZ19.getRange();
+    myMHZ19.getABC() ? dataDoc["abc"] = "enabled" : dataDoc["abc"] = "disabled";
+
     char buffer[256];
     memset(buffer, 0, sizeof(buffer));
     size_t n = serializeJson(dataDoc, buffer);
