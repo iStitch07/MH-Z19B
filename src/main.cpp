@@ -23,15 +23,15 @@ long lastCo2Measured = 0;
 
 float smoothing_factor = 0.5;
 float smoothing_factor2 = 0.15;
-int8_t flag = 0;
 
 const char* hostname = "mh-z19b";
 
 char mqtt_topic_status[]  = "esp/status/mh-z19b";
 char mqtt_topic_data[]    = "esp/sensors/co2/mh-z19b";
-char mqtt_topic_set[]     = "esp/set/mh-z19b";
+char mqtt_topic_set_abc[] = "esp/set/mh-z19b/abc";
 
 StaticJsonDocument<200> dataDoc;
+
 
 int co2;
 int co2_mean;
@@ -45,7 +45,9 @@ MHZ19 myMHZ19;
 boolean mqtt_reconnect() {
   if(client.connect(hostname, mqttUser, mqttPassword, mqtt_topic_status, 2, true, "offline")) {
     client.publish(mqtt_topic_status, "online", true);
+    client.subscribe(mqtt_topic_set_abc);
   }
+
   return client.connected();
 }
 
@@ -89,6 +91,22 @@ boolean wifi_reconnect() {
   return true;
 }
 
+void callback(char* topic, byte* payload, unsigned int length) {
+  char buff_p[length];
+  memset(buff_p, 0, sizeof(buff_p));
+  for (size_t i = 0; i < length; i++) { buff_p[i] = (char)payload[i]; }
+  buff_p[length] = '\0';
+
+  if(strcmp(buff_p, "enable") == 0) {
+    myMHZ19.autoCalibration(true);
+  }
+
+  if(strcmp(buff_p, "disable") == 0) {
+    myMHZ19.autoCalibration(false);
+  }
+
+}
+
 void setup() {
   Serial.begin(115200);
   delay(10);
@@ -98,6 +116,7 @@ void setup() {
   }
 
   client.setServer(mqttServer, mqttPort);
+  client.setCallback(callback);
   mqtt_reconnect();
 
   mySerial.begin(9600);
@@ -126,22 +145,14 @@ void loop() {
   
   long co2_time = millis();
   if(co2_time - lastCo2Measured > CO2_INTERVAL) {
-    if(flag == 0) {
-      co2 = myMHZ19.getCO2();
-      dataDoc["current"]  = co2;
-
-      if (!co2_mean) co2_mean = co2;
-        co2_mean = co2_mean - smoothing_factor*(co2_mean - co2);
+    co2 = myMHZ19.getCO2();
+    if (!co2_mean) co2_mean = co2;
+      co2_mean = co2_mean - smoothing_factor*(co2_mean - co2);
   
-      if (!co2_mean2) co2_mean2 = co2;
-        co2_mean2 = co2_mean2 - smoothing_factor2*(co2_mean2 - co2);
-      flag = 1;
-    } else {
-      co2 = myMHZ19.getCO2(false);
-      dataDoc["limited"] = co2;
-      flag = 0;
-    }
+    if (!co2_mean2) co2_mean2 = co2;
+      co2_mean2 = co2_mean2 - smoothing_factor2*(co2_mean2 - co2);
 
+    dataDoc["current"]  = co2;
     dataDoc["mean"]     = co2_mean;
     dataDoc["mean2"]    = co2_mean2;
     dataDoc["IP"]       = WiFi.localIP().toString();
