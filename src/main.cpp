@@ -28,7 +28,7 @@ const char* hostname = "mh-z19b";
 
 char mqtt_topic_status[]  = "esp/status/mh-z19b";
 char mqtt_topic_data[]    = "esp/sensors/co2/mh-z19b";
-char mqtt_topic_set_abc[] = "esp/set/mh-z19b/abc";
+char mqtt_topic_set_abc[] = "esp/set/mh-z19b";
 
 StaticJsonDocument<200> dataDoc;
 
@@ -66,10 +66,10 @@ boolean wifi_reconnect() {
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname(hostname);
   ArduinoOTA.onStart([]() {
-    Serial.println("Start");  //  "Начало OTA-апдейта"
+    Serial.println("Start");
   });
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");  //  "Завершение OTA-апдейта"
+    Serial.println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
@@ -92,6 +92,31 @@ boolean wifi_reconnect() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
+  char cmd_abc[32] = "";
+  char cmd_zero[32] = "";
+  
+  memset(cmd_abc, 0, sizeof(cmd_abc));
+  memset(cmd_zero, 0, sizeof(cmd_zero));
+
+  StaticJsonDocument<256> payload_doc;
+  deserializeJson(payload_doc, payload, length);
+
+  strlcpy(cmd_abc, payload_doc["abc"] | "default", sizeof(cmd_abc));
+  strlcpy(cmd_zero, payload_doc["zero"] | "default", sizeof(cmd_zero));
+
+  if(strcmp(cmd_abc, "enable") == 0) {
+    myMHZ19.autoCalibration(true);
+  }
+
+  if(strcmp(cmd_abc, "disable") == 0) {
+    myMHZ19.autoCalibration(false);
+  }
+
+  if(strcmp(cmd_zero, "start") == 0) {
+    // Will be implemented later
+  }
+
+  /*
   char buff_p[length];
   memset(buff_p, 0, sizeof(buff_p));
   for (size_t i = 0; i < length; i++) { buff_p[i] = (char)payload[i]; }
@@ -104,6 +129,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if(strcmp(buff_p, "disable") == 0) {
     myMHZ19.autoCalibration(false);
   }
+ */
+ 
 
 }
 
