@@ -8,7 +8,7 @@
 #include <MHZ19.h>
 
 #define RX_PIN D4  // D7
-#define TX_PIN D3// D6
+#define TX_PIN D3  // D6
 #define CO2_INTERVAL 10000
 
 const char* ssid          = SECRET_GENERAL_WIFI_SSID;
@@ -31,7 +31,6 @@ char mqtt_topic_data[]    = "esp/sensors/co2/mh-z19b";
 char mqtt_topic_set_abc[] = "esp/set/mh-z19b";
 
 StaticJsonDocument<200> dataDoc;
-
 
 int co2;
 int co2_mean;
@@ -91,6 +90,34 @@ boolean wifi_reconnect() {
   return true;
 }
 
+void zero_calibration() {
+  // Start calibration of the sensor
+  // This is not needed if you use auto calibration (abc)
+  //
+  // For zero calibration you need to place a sensor in clear enveronment (forest for example) 
+  // for at least 20 min before start
+  // 
+
+  // Turn off the ABC (auto baseline calibration) before start
+  myMHZ19.autoCalibration(false);
+
+  unsigned long timeElapse = 12e5;
+  unsigned long startTime = millis();
+  unsigned long endTime = startTime + timeElapse;
+  
+  // waiting for 20 min (timeElapse value)
+  // good idea to leave sensor alone
+  while (millis() < endTime) { 
+    delay(1000);
+  }
+
+  // Start calibrate. Current CO2 value will be set as "zero"
+  // For MH-Z19B zero is 400 ppm
+  myMHZ19.calibrate();
+
+  return;
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
   char cmd_abc[32] = "";
   char cmd_zero[32] = "";
@@ -113,24 +140,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 
   if(strcmp(cmd_zero, "start") == 0) {
-    // Will be implemented later
+    zero_calibration();
   }
-
-  /*
-  char buff_p[length];
-  memset(buff_p, 0, sizeof(buff_p));
-  for (size_t i = 0; i < length; i++) { buff_p[i] = (char)payload[i]; }
-  buff_p[length] = '\0';
-
-  if(strcmp(buff_p, "enable") == 0) {
-    myMHZ19.autoCalibration(true);
-  }
-
-  if(strcmp(buff_p, "disable") == 0) {
-    myMHZ19.autoCalibration(false);
-  }
- */
- 
 
 }
 
