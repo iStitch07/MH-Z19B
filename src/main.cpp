@@ -32,9 +32,9 @@ char mqtt_topic_set_abc[] = "esp/set/mh-z19b";
 
 StaticJsonDocument<200> dataDoc;
 
-int co2;
-int co2_mean;
-int co2_mean2;
+int co2 = 0;
+int co2_mean = 0;
+int co2_mean2 = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -147,7 +147,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void setup() {
   Serial.begin(115200);
-  delay(10);
+  delay(1000);
 
   if(WiFi.status() != WL_CONNECTED) {
     wifi_reconnect();
@@ -183,25 +183,29 @@ void loop() {
   
   long co2_time = millis();
   if(co2_time - lastCo2Measured > CO2_INTERVAL) {
-    co2 = myMHZ19.getCO2();
-    if (!co2_mean) co2_mean = co2;
-      co2_mean = co2_mean - smoothing_factor*(co2_mean - co2);
-  
-    if (!co2_mean2) co2_mean2 = co2;
-      co2_mean2 = co2_mean2 - smoothing_factor2*(co2_mean2 - co2);
+    co2 = myMHZ19.getCO2(false);
+    if(myMHZ19.errorCode == RESULT_OK) {
+      if (!co2_mean) co2_mean = co2;
+        co2_mean = co2_mean - smoothing_factor*(co2_mean - co2);
+      if (!co2_mean2) co2_mean2 = co2;
+        co2_mean2 = co2_mean2 - smoothing_factor2*(co2_mean2 - co2);
 
-    dataDoc["current"]  = co2;
-    dataDoc["mean"]     = co2_mean;
-    dataDoc["mean2"]    = co2_mean2;
+      dataDoc["current"]  = co2;
+      dataDoc["mean"]     = co2_mean;
+      dataDoc["mean2"]    = co2_mean2;
+    }
+
     dataDoc["IP"]       = WiFi.localIP().toString();
     dataDoc["Temp"]     = myMHZ19.getTemperature();
     dataDoc["Range"]    = myMHZ19.getRange();
     myMHZ19.getABC() ? dataDoc["abc"] = "enabled" : dataDoc["abc"] = "disabled";
+    dataDoc["status"]   = myMHZ19.errorCode;
 
     char buffer[256];
     memset(buffer, 0, sizeof(buffer));
     size_t n = serializeJson(dataDoc, buffer);
     client.publish(mqtt_topic_data, buffer, n);
+    
     lastCo2Measured = co2_time;
   }
 
