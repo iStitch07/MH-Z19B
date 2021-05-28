@@ -160,7 +160,7 @@ void setup() {
   mySerial.begin(9600);
   myMHZ19.begin(mySerial);
 
-  myMHZ19.autoCalibration(false);
+  //myMHZ19.autoCalibration(false);
 }
 
 void loop() {
