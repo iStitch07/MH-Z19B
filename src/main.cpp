@@ -161,6 +161,7 @@ void setup() {
   myMHZ19.begin(mySerial);
 
   //myMHZ19.autoCalibration(false);
+  myMHZ19.setRange(2000);
 }
 
 void loop() {
@@ -199,7 +200,12 @@ void loop() {
     dataDoc["Temp"]     = myMHZ19.getTemperature();
     dataDoc["Range"]    = myMHZ19.getRange();
     myMHZ19.getABC() ? dataDoc["abc"] = "enabled" : dataDoc["abc"] = "disabled";
-    dataDoc["status"]   = myMHZ19.errorCode;
+    if(myMHZ19.errorCode == 1) { 
+      dataDoc["status"]   = "OK";
+    } else {
+      dataDoc["status"]   = myMHZ19.errorCode;
+    }
+    dataDoc["background value"] = myMHZ19.getBackgroundCO2();
 
     char buffer[256];
     memset(buffer, 0, sizeof(buffer));
