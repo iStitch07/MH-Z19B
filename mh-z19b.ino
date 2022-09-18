@@ -30,7 +30,7 @@ char mqtt_topic_status[]  = "esp/status/mh-z19b";
 char mqtt_topic_data[]    = "esp/sensors/co2/mh-z19b";
 char mqtt_topic_set_abc[] = "esp/set/mh-z19b";
 
-StaticJsonDocument<200> dataDoc;
+StaticJsonDocument<240> dataDoc;
 
 int co2 = 0;
 int co2_mean = 0;
@@ -206,6 +206,7 @@ void loop() {
       dataDoc["status"]   = myMHZ19.errorCode;
     }
     dataDoc["background value"] = myMHZ19.getBackgroundCO2();
+    dataDoc["accuracy"] = myMHZ19.getAccuracy();
 
     char buffer[256];
     memset(buffer, 0, sizeof(buffer));
